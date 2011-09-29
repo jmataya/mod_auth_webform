@@ -44,6 +44,7 @@ static char * get_conf_value(request_rec *r, char *key) {
 }
 
 static int mod_auth_webform_handler(request_rec *r) {
+     
     apr_file_t *fd;
     apr_size_t sz;
     apr_status_t rv;
@@ -83,51 +84,16 @@ static int mod_auth_webform_handler(request_rec *r) {
             APLOG_ERR,
             0,
             r,
-            "mod_auth_webform: Env variable auth_page not found in httpd.conf!");
+            "mod_auth_webform: Env variable auth_page not found in httpd.conf");
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    apr_table_setn(r->headers_out, "Location", "http://localhost");
-    ap_internal_redirect("http://localhost", r);
-/*
-    // Redirect to the login page.
-    ap_set_content_type(r, "text/html;charset=ascii");
-
-    // Set the file size.
-    stat(login_filename, &st);
-    ap_set_content_length(r, st.st_size);
-
-    // Set the last modified date.
-    if (st.st_mtime) {
-        char *date_str = apr_palloc(r->pool, APR_RFC822_DATE_LEN);
-        apr_rfc822_date(date_str, st.st_mtime);
-        apr_table_setn(r->headers_out, "Last-Modified", date_str);
-    }
-
-    // Open the file.
-    rv = apr_file_open(
-        &fd,
-        login_filename,
-        APR_READ|APR_SHARELOCK|APR_SENDFILE_ENABLED,
-        APR_OS_DEFAULT,
-        r->pool);
-
-    if (rv != APR_SUCCESS) {
-        ap_log_rerror(
-            APLOG_MARK,
-            APLOG_ERR,
-            0, 
-            r,
-            "can't open %s",
-            login_filename);
-        return HTTP_NOT_FOUND;
-    }
-
-    // Send the file.
-    ap_send_fd(fd, r, 0, st.st_size, &sz);
-    apr_file_close(fd);
-*/
-    return OK;
+    //
+    // TODO: Obviously, we don't want to always redirect to Google. Replace this
+    // with the value taken from the configuration file.
+    //
+    apr_table_setn(r->headers_out, "Location", login_filename);
+    return HTTP_MOVED_TEMPORARILY;
 }
 
 static void mod_auth_webform_hooks(apr_pool_t * pool) {
