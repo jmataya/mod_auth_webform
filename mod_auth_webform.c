@@ -61,58 +61,90 @@ char * get_conf_value(request_rec *r, char *key) {
 }
 
 //
-// Replace a substring in a string. 
+// Copy part of a string.
 // Inputs:
-//  (*) r - The current request data structure.
-//  (*) initial_str - The initial string. If to_remove is not found, then the
-//          initial string will be returned.
-//  (*) to_remove - The part of the string that should be removed.
-//  (*) to_add - The string to insert.
+//  (*) r - The request data structure.
+//  (*) source - The original string.
+//  (*) start_index - The place in the string where the copy should start.
+//  (*) copy_length - The number of characters to copy. This should NOT include
+//          the null character.
+// Returns:
+//  (*) The substring that has been copied.
 //
-char * replace_substr(
-        request_rec *r, 
-        char *initial_str, 
-        char *to_remove, 
-        char *to_add) {
-    int to_remove_index = 0;
-    int to_add_index = 0;
-    int main_index = 0;
-    int new_index = 0;
-    int placeholder_index = 0;
-    int new_str_len = 0;
-    char *new_str = NULL;
+char * substr_copy(request_rec *r, char *source, int start_index, int copy_length) {
+
+    char *substr = NULL;
+    int index = 0;
     
-    // If to_remove is the same length or longer than to_add, then do everything
-    // inline. Otherwise, allocate new space.
-    new_str_len = strlen(initial_str) - strlen(to_remove) + strlen(to_add);
-    if (strlen(initial_str) < new_str_len) {
-        new_str = apr_palloc(r->pool, new_str_len * sizeof(char));
-    }
-    else {
-        new_str = initial_str;
-    }
-    
-    while (main_index < strlen(initial_str)) {
+    if (start_index >= 0 && start_index < strlen(source)) {
+        substr = apr_palloc(r->pool, (copy_length + 1) * sizeof(char));
         
-        // Set the placeholder index at the current spot.
-        placeholder_index = main_index;
-            
-        while (to_remove_index < strlen(to_remove)) {
-            new_str[new_index] = initial_str[main_index];
-            if (initial_str[main_index] == to_remove[to_remove_index]) {
-                new_index++;
-                main_index++;
-                to_remove_index++;
-            }
-            else {
-                to_remove_index = 0;
-                break;
+        while (start_index < strlen(source) && index < copy_length) {
+            substr[index++] = source[start_index++];
+        }
+        
+        substr[index] = '\0';
+    }
+    
+    return substr;
+}
+
+//
+// Replace a substring within a string.
+// Inputs:
+//  (*) r - The request data structure.
+//  (*) initial - The initial string.
+//  (*) to_remove - The part of the string that should be replaced.
+//  (*) to_add - The new string to add.
+// Returns:
+//  (*) The new string.
+//
+char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_add) {
+
+    char *improved;
+    char *substr;
+    int improved_size;
+    int idx_initial = 0;
+    int idx_improved = 0;
+    int idx_to_remove = 0;
+    int idx_to_add = 0;
+    int idx_placeholder = 0;
+    int to_remove_found = 0;
+    
+    improved_size = strlen(initial) - strlen(to_remove) + strlen(to_add);
+    improved = apr_palloc(r->pool, improved_size * sizeof(char));
+    
+    while (idx_initial < strlen(initial) && idx_improved < improved_size) {
+    
+        improved[idx_improved] = initial[idx_initial];
+        
+        // Check for replacement
+        if (!to_remove_found) {
+            substr = substr_copy(r, initial, idx_initial, strlen(to_remove));
+            printf("Sub num. %i: %s\n", idx_initial, substr);
+            if (strcmp(substr, to_remove) == 0) {
+                to_remove_found = 1;
+                
+                // Insert the new string.
+                for (idx_to_add = 0; idx_to_add < strlen(to_add); idx_to_add++) {
+                    improved[idx_improved++] = to_add[idx_to_add];
+                }
+                                
+                // Update the indecies.
+                idx_initial += strlen(to_remove) - 1;
+                idx_improved -= 1;
             }
         }
+        
+                
+        
+        idx_initial++;
+        idx_improved++;
     }
     
-    return new_str;
+    return improved;
 }
+
     
 //
 // Strips the http(s):// from the beginning of the URL.
@@ -123,10 +155,9 @@ char * replace_substr(
 //  (*) The new normalized URL.
 //
 static char * normalize_url(request_rec *r, char *url) {
-    char *pch;
     char *return_url = NULL;
-    char *file_root;
-    int i = 0;
+    char *file_root = NULL;
+    char *server_name = NULL;
     
     // Some basic error checking.
     if (url == NULL || strlen(url) > URL_MAX_LEN) {
@@ -153,23 +184,23 @@ static char * normalize_url(request_rec *r, char *url) {
             "mod_auth_webform: Env variable file_root not found in httpd.conf");
         return NULL;
     }   
-
-    // Tokenize and reform the URL.
-    pch = strtok(url, "\\/");
-    while (pch != NULL) {
-        if (strcmp(pch, "http") != 0 && strcmp(pch, "https") != 0) {
-            // Append a slash if this isn't the first concatenation.
-            if (i++ > 0) {
-                strcat(return_url, "/");
-            }
-            
-            // Append the segment.
-            strcat(return_url, pch);
-        }
-        
-        // Get the next segement.
-        pch = strtok(NULL, "\\/");
+    
+    // Attempt to retrieve the server name from httpd.conf.
+    server_name = get_conf_value(r, "server_name");
+    if (server_name == NULL) {
+        ap_log_rerror(
+            APLOG_MARK,
+            APLOG_ERR,
+            0,
+            r,
+            "mod_auth_webform: Env variable server_name not found in httpd.conf");
+        return NULL;
     }
+
+    // Remove https, then http, then the file_root.
+    return_url = replace_substr(r, url, "https://", "");
+    return_url = replace_substr(r, url, "http://", "");
+    return_url = replace_substr(r, url, file_root, server_name);
     
     return return_url;
 }
@@ -203,8 +234,7 @@ static char * my_cat(request_rec *r, char *destination, char *source) {
         index_old++;
     }
     
-    new_string[index_new] = '\0';
-    // new_string = escape_uri(r->pool, new_string);
+    //new_string[index_new] = '\0';
     return new_string;
 }
 
@@ -218,14 +248,14 @@ static char * craft_login_url(request_rec *r, char *login_url, char *return_url)
     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, fixed_return_url);
     
     // Get the size of the new URL.
-    size = strlen(login_url) + strlen(fixed_return_url) + 2;
+    size = strlen(login_url) + strlen(fixed_return_url) + 3;
     
     // Set the new URL.
     final_url = apr_palloc(r->pool, size * sizeof(char));
     //strcat(final_url, login_url);
     final_url = my_cat(r, final_url, login_url);
-    strcat(final_url, "?redir=");
-    strcat(final_url, fixed_return_url);
+    final_url = my_cat(r, final_url, "?redir=");
+    final_url = my_cat(r, final_url, fixed_return_url);
     
     return final_url;
 }
@@ -236,6 +266,7 @@ static int mod_auth_webform_handler(request_rec *r) {
     apr_size_t sz;
     apr_status_t rv;
     char *login_filename;
+    char *fixed_login_filename;
     struct stat st;
     int size;
     char *final_login_url;
