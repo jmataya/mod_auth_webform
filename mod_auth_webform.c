@@ -50,16 +50,70 @@
 // Returns:
 //  (*) Either the value as a character string. Returns NULL if not found.
 //
-static char * get_conf_value(request_rec *r, char *key) {
-    char *value = NULL;
-
+char * get_conf_value(request_rec *r, char *key) {
+    char * value = NULL;
+    
     if (r != NULL && r->subprocess_env != NULL && key != NULL) {
-        value = apr_table_get(r->subprocess_env, key);
+        value = (char *)apr_table_get(r->subprocess_env, key);
     }
-
+    
     return value;
 }
 
+//
+// Replace a substring in a string. 
+// Inputs:
+//  (*) r - The current request data structure.
+//  (*) initial_str - The initial string. If to_remove is not found, then the
+//          initial string will be returned.
+//  (*) to_remove - The part of the string that should be removed.
+//  (*) to_add - The string to insert.
+//
+char * replace_substr(
+        request_rec *r, 
+        char *initial_str, 
+        char *to_remove, 
+        char *to_add) {
+    int to_remove_index = 0;
+    int to_add_index = 0;
+    int main_index = 0;
+    int new_index = 0;
+    int placeholder_index = 0;
+    int new_str_len = 0;
+    char *new_str = NULL;
+    
+    // If to_remove is the same length or longer than to_add, then do everything
+    // inline. Otherwise, allocate new space.
+    new_str_len = strlen(initial_str) - strlen(to_remove) + strlen(to_add);
+    if (strlen(initial_str) < new_str_len) {
+        new_str = apr_palloc(r->pool, new_str_len * sizeof(char));
+    }
+    else {
+        new_str = initial_str;
+    }
+    
+    while (main_index < strlen(initial_str)) {
+        
+        // Set the placeholder index at the current spot.
+        placeholder_index = main_index;
+            
+        while (to_remove_index < strlen(to_remove)) {
+            new_str[new_index] = initial_str[main_index];
+            if (initial_str[main_index] == to_remove[to_remove_index]) {
+                new_index++;
+                main_index++;
+                to_remove_index++;
+            }
+            else {
+                to_remove_index = 0;
+                break;
+            }
+        }
+    }
+    
+    return new_str;
+}
+    
 //
 // Strips the http(s):// from the beginning of the URL.
 // Inputs:
@@ -71,6 +125,7 @@ static char * get_conf_value(request_rec *r, char *key) {
 static char * normalize_url(request_rec *r, char *url) {
     char *pch;
     char *return_url = NULL;
+    char *file_root;
     int i = 0;
     
     // Some basic error checking.
@@ -79,25 +134,24 @@ static char * normalize_url(request_rec *r, char *url) {
         return_url[0] = '\0';
         return return_url;
     }
-    else if (url[strlen(url)-1] != '\0') {
+    else if (url[strlen(url)] != '\0') {
         // Ensure that the string is null terminated.
-        url[strlen(url)-1] = '\0';
+        url[strlen(url)] = '\0';
     }
     
     // Initialize the return URL.
     return_url = apr_palloc(r->pool, (strlen(url) + 1) * sizeof(char));     
  
     // Attempt to retrieve the document root from httpd.conf.
-
-    login_filename = get_conf_value(r, "auth_page");
-    if (login_filename == NULL) {
+    file_root = get_conf_value(r, "file_root");
+    if (file_root == NULL) {
         ap_log_rerror(
             APLOG_MARK,
             APLOG_ERR,
             0,
             r,
-            "mod_auth_webform: Env variable auth_page not found in httpd.conf");
-        return HTTP_INTERNAL_SERVER_ERROR;
+            "mod_auth_webform: Env variable file_root not found in httpd.conf");
+        return NULL;
     }   
 
     // Tokenize and reform the URL.
@@ -150,7 +204,7 @@ static char * my_cat(request_rec *r, char *destination, char *source) {
     }
     
     new_string[index_new] = '\0';
-    new_string = escape_uri(r->pool, new_string);
+    // new_string = escape_uri(r->pool, new_string);
     return new_string;
 }
 
@@ -161,6 +215,7 @@ static char * craft_login_url(request_rec *r, char *login_url, char *return_url)
     
     // Fix the return URL.
     fixed_return_url = normalize_url(r, return_url);
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, fixed_return_url);
     
     // Get the size of the new URL.
     size = strlen(login_url) + strlen(fixed_return_url) + 2;
