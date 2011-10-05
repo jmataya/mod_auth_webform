@@ -43,10 +43,39 @@
                             // will implement at a maximum.
 
 //
+// The configuration structure. This structure is heavily influenced by
+// Mathieu Carbonneaux's mod_auth_memcookie.
+//
+typedef struct {
+    char *	szAuth_memCookie_memCached_addr;
+    apr_time_t 	tAuth_memCookie_MemcacheObjectExpiry;
+    int 	nAuth_memCookie_MemcacheObjectExpiryReset;
+
+    int 	nAuth_memCookie_SetSessionHTTPHeader;
+    int 	nAuth_memCookie_SetSessionHTTPHeaderEncode;
+    int 	nAuth_memCookie_SessionTableSize;
+
+    char *	szAuth_memCookie_CookieName;
+
+    int 	nAuth_memCookie_GroupAuthoritative;
+    int 	nAuth_memCookie_Authoritative;
+    int 	nAuth_memCookie_MatchIP_Mode;
+
+    int 	nAuth_memCookie_authbasicfix;
+} strAuth_memCookie_config_rec;
+
+
+
+
+
+
+//
 // Get a value from the Apache configuration.
+//
 // Inputs:
 //  (*) r - The current request data structure.
 //  (*) key - Key identifying the value to find.
+//
 // Returns:
 //  (*) Either the value as a character string. Returns NULL if not found.
 //
@@ -62,6 +91,7 @@ char * get_conf_value(request_rec *r, char *key) {
 
 //
 // Copy part of a string.
+//
 // Inputs:
 //  (*) r - The request data structure.
 //  (*) source - The original string.
@@ -91,11 +121,13 @@ char * substr_copy(request_rec *r, char *source, int start_index, int copy_lengt
 
 //
 // Replace a substring within a string.
+//
 // Inputs:
 //  (*) r - The request data structure.
 //  (*) initial - The initial string.
 //  (*) to_remove - The part of the string that should be replaced.
 //  (*) to_add - The new string to add.
+//
 // Returns:
 //  (*) The new string.
 //
@@ -119,7 +151,6 @@ char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_a
         // Check for replacement
         if (!to_remove_found) {
             substr = substr_copy(r, initial, idx_initial, strlen(to_remove));
-            printf("Sub num. %i: %s\n", idx_initial, substr);
             if (strcmp(substr, to_remove) == 0) {
                 to_remove_found = 1;
                 
@@ -146,6 +177,7 @@ char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_a
     
 //
 // Strips the http(s):// from the beginning of the URL.
+//
 // Inputs:
 //  (*) url - The raw URL that is inputted from the user.
 //            TODO: Do some testing around XSS here.
@@ -203,11 +235,20 @@ static char * normalize_url(request_rec *r, char *url) {
     return return_url;
 }
 
+//
+// Craft the login URL. This involves setting the URL that goes to the login page.
+// It also adds the redirection query string parameters.
+//
+// Inputs:
+//  (*) r - The current request data source.
+//  (*) login_url - The location of the login page.
+//  (*) return_url - The URL that the user was trying to get to.
+//
+// Returns:
+//  (*) The final URL.
+//
 static char * craft_login_url(request_rec *r, char *login_url, char *return_url) {
     char *final_url;
-    char *a;
-    char *b;
-    char *c;
     char *fixed_return_url;
     int size;
     
@@ -226,7 +267,6 @@ static char * craft_login_url(request_rec *r, char *login_url, char *return_url)
     strcat(final_url, login_url);
     strcat(final_url, "?redir=");
     strcat(final_url, fixed_return_url);
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, final_url);
     return final_url;
 }
 
@@ -277,10 +317,6 @@ static int mod_auth_webform_handler(request_rec *r) {
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    //
-    // TODO: Obviously, we don't want to always redirect to Google. Replace this
-    // with the value taken from the configuration file.
-    //
     final_login_url = craft_login_url(r, login_filename, r->filename);
     if (final_login_url == NULL) {
         ap_log_rerror(
