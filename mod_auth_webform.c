@@ -106,9 +106,7 @@ char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_a
     int improved_size;
     int idx_initial = 0;
     int idx_improved = 0;
-    int idx_to_remove = 0;
     int idx_to_add = 0;
-    int idx_placeholder = 0;
     int to_remove_found = 0;
     
     improved_size = strlen(initial) - strlen(to_remove) + strlen(to_add);
@@ -205,58 +203,30 @@ static char * normalize_url(request_rec *r, char *url) {
     return return_url;
 }
 
-static char * my_cat(request_rec *r, char *destination, char *source) {
-    int new_size = 0;
-    int index_old = 0;
-    int index_new = 0;
-    char *new_string = NULL;
-    char to_copy;
-    
-    // Allocate the new string.
-    new_size = strlen(destination) + strlen(source) + 1;
-    new_string = apr_palloc(r->pool, new_size * sizeof(char));
-    
-    // Copy the old string.
-    while (index_old < strlen(destination) && destination[index_old] != '\0') {
-        to_copy = destination[index_old];
-        new_string[index_new] = to_copy;
-        
-        index_new++;
-        index_old++;
-    }
-    
-    // Copy the new string.
-    index_old = 0;
-    while (index_old < strlen(source) && source[index_new] != '\0') {
-        // Copy.
-        new_string[index_new] = source[index_old];
-        index_new++;
-        index_old++;
-    }
-    
-    //new_string[index_new] = '\0';
-    return new_string;
-}
-
 static char * craft_login_url(request_rec *r, char *login_url, char *return_url) {
     char *final_url;
+    char *a;
+    char *b;
+    char *c;
     char *fixed_return_url;
     int size;
     
     // Fix the return URL.
     fixed_return_url = normalize_url(r, return_url);
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, fixed_return_url);
+    if (fixed_return_url == NULL) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "mod_auth_webform: Error fixing URL");
+        return NULL;
+    }
     
     // Get the size of the new URL.
-    size = strlen(login_url) + strlen(fixed_return_url) + 3;
+    size = strlen(login_url) + strlen("?redir=") + strlen(fixed_return_url) + 3;
     
     // Set the new URL.
     final_url = apr_palloc(r->pool, size * sizeof(char));
-    //strcat(final_url, login_url);
-    final_url = my_cat(r, final_url, login_url);
-    final_url = my_cat(r, final_url, "?redir=");
-    final_url = my_cat(r, final_url, fixed_return_url);
-    
+    strcat(final_url, login_url);
+    strcat(final_url, "?redir=");
+    strcat(final_url, fixed_return_url);
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, final_url);
     return final_url;
 }
 
@@ -312,6 +282,16 @@ static int mod_auth_webform_handler(request_rec *r) {
     // with the value taken from the configuration file.
     //
     final_login_url = craft_login_url(r, login_filename, r->filename);
+    if (final_login_url == NULL) {
+        ap_log_rerror(
+            APLOG_MARK,
+            APLOG_ERR,
+            0,
+            r,
+            "mod_auth_webform: Error in final_login_url");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     apr_table_setn(r->headers_out, "Location", final_login_url);
     return HTTP_MOVED_TEMPORARILY;
 }
