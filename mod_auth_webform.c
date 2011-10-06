@@ -64,10 +64,64 @@ typedef struct {
     int 	nAuth_memCookie_authbasicfix;
 } strAuth_memCookie_config_rec;
 
+//
+// Extract the cookie from the headers.
+// This method was influenced by Mathieu Carbonneaux's mod_auth_memcookie.
+//
+// Inputs:
+//  (*) r - The current request.
+//  (*) cookie_name - The name of the cookie.
+//
+// Returns:
+//  (*) The cookie.
+//
+static char * extract_cookie(request_rec *r, const char *cookie_name) {
+    char *last = NULL;
+    char *raw_cookie = NULL;
+    char *individual_cookie = NULL;
+    char *specific_cookie = NULL;
+    char tokens[] = "; ";
 
+    // Extract the raw cookie from the headers.
+    raw_cookie = apr_palloc(r->pool, 1024 * sizeof(char));
+    apr_cpystrn(raw_cookie, (char*)apr_table_get(r->headers_in, "Cookie"), 1024);
 
+    if (raw_cookie == NULL) {
+        ap_log_rerror(
+            APLOG_MARK,
+            APLOG_ERR,
+            0,
+            r,
+            "mod_auth_webform: Cookie not found in the headers.");
+        return NULL;
+    }
 
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, raw_cookie);
+ 
+    // Separate the cookies and inspect one by one.
+    individual_cookie = apr_strtok(raw_cookie, tokens, &last);
+    while (individual_cookie != NULL) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, individual_cookie);
+        individual_cookie = apr_strtok(NULL, tokens, &last);
+    }
 
+    // Search for the cookie name.
+    /*//do {
+        // Get the first occurrance of the cookie name.
+        raw_cookie = strstr(raw_cookie, cookie_name);
+        if (raw_cookie == NULL) {
+            ap_log_rerror(
+                APLOG_MARK,
+                APLOG_ERR,
+                0,
+                r,
+                "mod_auth_webform: Cookie name not found.");
+            return NULL;
+        }
+
+*/
+    return "test";
+}
 
 //
 // Get a value from the Apache configuration.
@@ -79,7 +133,7 @@ typedef struct {
 // Returns:
 //  (*) Either the value as a character string. Returns NULL if not found.
 //
-char * get_conf_value(request_rec *r, char *key) {
+static char * get_conf_value(request_rec *r, char *key) {
     char * value = NULL;
     
     if (r != NULL && r->subprocess_env != NULL && key != NULL) {
@@ -101,7 +155,7 @@ char * get_conf_value(request_rec *r, char *key) {
 // Returns:
 //  (*) The substring that has been copied.
 //
-char * substr_copy(request_rec *r, char *source, int start_index, int copy_length) {
+static char * substr_copy(request_rec *r, char *source, int start_index, int copy_length) {
 
     char *substr = NULL;
     int index = 0;
@@ -131,7 +185,7 @@ char * substr_copy(request_rec *r, char *source, int start_index, int copy_lengt
 // Returns:
 //  (*) The new string.
 //
-char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_add) {
+static char * replace_substr(request_rec *r, char *initial, char *to_remove, char *to_add) {
 
     char *improved;
     char *substr;
@@ -304,6 +358,7 @@ static int mod_auth_webform_handler(request_rec *r) {
     // TODO: Insert logic that checks to see if the user is signed in. If so,
     // then serve the requested page. If not, redirect to the login page.
     //
+    extract_cookie(r, "Test");
 
     // Attempt to retrieve the login page from httpd.conf.
     login_filename = get_conf_value(r, "auth_page");
